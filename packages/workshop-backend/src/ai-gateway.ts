@@ -21,8 +21,8 @@ export class AiGatewayConfig {
     // same-account mode existed only because of the Workers binding.
     if (!env.CF_AI_GATEWAY_ACCOUNT_ID || !env.CF_AI_GATEWAY_API_TOKEN) {
       throw new Error(
-          "CF_AI_GATEWAY_ACCOUNT_ID and CF_AI_GATEWAY_API_TOKEN (with Workers AI Read and " +
-          "AI Gateway Read) are required when CF_AI_GATEWAY is set.");
+          "CF_AI_GATEWAY_ACCOUNT_ID and CF_AI_GATEWAY_API_TOKEN (with AI Gateway Run and Read, " +
+          "plus Workers AI Read when used) are required when CF_AI_GATEWAY is set.");
     }
     this.accountId = env.CF_AI_GATEWAY_ACCOUNT_ID;
     this.apiToken = env.CF_AI_GATEWAY_API_TOKEN;

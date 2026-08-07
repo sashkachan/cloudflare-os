@@ -16,7 +16,7 @@ declare global {
       CF_AI_GATEWAY?: string;            // Gateway name (enables gateway mode)
       CF_AI_GATEWAY_PROVIDERS?: string;   // Comma-separated provider allowlist, including deepseek
       CF_AI_GATEWAY_ACCOUNT_ID?: string;  // Gateway owner account ID (required with CF_AI_GATEWAY)
-      CF_AI_GATEWAY_API_TOKEN?: string;   // Workers AI Read + AI Gateway Read token
+      CF_AI_GATEWAY_API_TOKEN?: string;   // AI Gateway Run + Read; Workers AI Read when used
       CF_AI_GATEWAY_WAI?: string;         // Optional Workers AI gateway override
       CF_AI_GATEWAY_WAI_DIRECT?: string;  // "true" to route Workers AI to its plain REST endpoint
                                           // (no gateway, no cost logs) instead of a named Gateway

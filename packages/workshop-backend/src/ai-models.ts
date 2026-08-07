@@ -158,11 +158,11 @@ function workersAiCompat(catalog: Model<Api> | undefined): OpenAICompletionsComp
   };
 }
 
-function deepSeekModel(config: AiModelConfig, baseUrl: string, unified: boolean): Model<Api> {
+function deepSeekModel(config: AiModelConfig, baseUrl: string): Model<Api> {
   const catalog = catalogModel(config.provider, config.model);
   const providerModelId = config.model.replace(/^deepseek\//, "");
   return {
-    id: unified ? `deepseek/${providerModelId}` : providerModelId,
+    id: providerModelId,
     name: catalog?.name ?? providerModelId,
     api: "openai-completions",
     provider: "deepseek",
@@ -174,24 +174,6 @@ function deepSeekModel(config: AiModelConfig, baseUrl: string, unified: boolean)
     thinkingLevelMap: catalog?.thinkingLevelMap,
     compat: catalog?.compat as OpenAICompletionsCompat | undefined,
   };
-}
-
-// DeepSeek Unified Billing is exposed through Cloudflare's OpenAI-compatible REST API rather
-// than the provider-native gateway route used by the other supported providers. The canonical
-// `deepseek/<model>` id selects the provider; the gateway header keeps requests, spend limits,
-// and logs on the configured Gateway.
-function getDeepSeekViaCloudflareGateway(
-    config: AiModelConfig, accountId: string, apiToken: string, gateway: string,
-    metadata: GatewayMetadata, sessionAffinity?: string): ModelHandle {
-  return makeHandle({
-    model: deepSeekModel(
-        config, `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`, true),
-    apiKey: apiToken,
-    headers: { "cf-aig-gateway-id": gateway },
-    gatewayMetadata: metadata,
-    sessionAffinity,
-    aiGatewayLogRoute: { gateway, accountId, apiToken },
-  });
 }
 
 // Build the pi model descriptor for reaching a provider's own native API through an AI Gateway
@@ -239,6 +221,11 @@ function gatewayNativeModel(config: AiModelConfig, gatewayUrl: string): Model<Ap
         thinkingLevelMap: catalog?.thinkingLevelMap,
         compat: catalog?.compat,
       };
+    case "deepseek":
+      // DeepSeek's provider-native endpoint is OpenAI-compatible. Using this path allows AI
+      // Gateway to inject the stored DeepSeek `default` BYOK key; the account-level /ai/v1
+      // endpoint falls through to Unified Billing for this catalog route.
+      return deepSeekModel(config, `${gatewayUrl}/deepseek`);
     case "google":
       // pi's own gateway catalog skips Google, but the gateway's google-ai-studio passthrough +
       // pi's google API impl work; we construct the model ourselves. The @google/genai SDK
@@ -410,12 +397,6 @@ function getModelViaUserGateway(
   userGateway: UserGatewayRouting,
   sessionAffinity?: string,
 ): ModelHandle {
-  if (config.provider === "deepseek") {
-    return getDeepSeekViaCloudflareGateway(
-        config, userGateway.accountId, userGateway.apiKey, "default", metadata,
-        sessionAffinity);
-  }
-
   // Route through the user's AI Gateway data plane, speaking each provider's native API (see
   // gatewayNativeModel; unified *billing* has no API requirements). Auth is the connected user's
   // Cloudflare token via `cf-aig-authorization` (authorized by its `aig.run` scope); the
@@ -468,12 +449,6 @@ function getModelViaGateway(
       `https://gateway.ai.cloudflare.com/v1/${gwConfig.accountId}`;
   const logRoute = (gateway: string): AiGatewayLogRoute =>
       ({ gateway, accountId: gwConfig.accountId, apiToken: gwConfig.apiToken });
-
-  if (config.provider === "deepseek") {
-    return getDeepSeekViaCloudflareGateway(
-        config, gwConfig.accountId, gwConfig.apiToken, gwConfig.gateway, metadata,
-        options.sessionAffinity);
-  }
 
   if (config.provider === "cloudflare" && !gwConfig.workersAiGateway) {
     // CF_AI_GATEWAY_WAI_DIRECT: the plain Workers AI REST endpoint -- no gateway, no log route,
@@ -596,8 +571,7 @@ function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelH
       });
     case "deepseek":
       return makeHandle({
-        model: deepSeekModel(
-            config, config.apiUrl ?? "https://api.deepseek.com", false),
+        model: deepSeekModel(config, config.apiUrl ?? "https://api.deepseek.com"),
         apiKey: config.apiToken,
         sessionAffinity,
       });

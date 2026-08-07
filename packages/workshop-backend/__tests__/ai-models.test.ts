@@ -130,15 +130,15 @@ describe("getModel AI Gateway routing", () => {
     });
   });
 
-  it("routes DeepSeek through Cloudflare Unified Billing on the selected gateway", async () => {
+  it("routes DeepSeek through the selected gateway's stored BYOK key", async () => {
     const handle = getModel(env(), DEEPSEEK_CONFIG, INITIATOR, {
       metadata: { source: "chat", gadgetId: "gadget-deepseek", chatId: 11 },
     });
 
     expect(handle.model.api).toBe("openai-completions");
-    expect(handle.model.id).toBe("deepseek/deepseek-v4-flash");
+    expect(handle.model.id).toBe("deepseek-v4-flash");
     expect(handle.model.baseUrl).toBe(
-        "https://api.cloudflare.com/client/v4/accounts/gateway-account-id/ai/v1");
+        "https://gateway.ai.cloudflare.com/v1/gateway-account-id/platform-gateway/deepseek");
     expect(handle.aiGatewayLogRoute).toEqual({
       gateway: "platform-gateway",
       accountId: "gateway-account-id",
@@ -147,12 +147,12 @@ describe("getModel AI Gateway routing", () => {
 
     const request = await captureRequest(handle);
     expect(request.url).toBe(
-        "https://api.cloudflare.com/client/v4/accounts/gateway-account-id/ai/v1/" +
+        "https://gateway.ai.cloudflare.com/v1/gateway-account-id/platform-gateway/deepseek/" +
         "chat/completions");
-    expect(request.headers.get("authorization")).toBe("Bearer gateway-token");
-    expect(request.headers.get("cf-aig-authorization")).toBeNull();
-    expect(request.headers.get("cf-aig-gateway-id")).toBe("platform-gateway");
-    expect(JSON.parse(request.body).model).toBe("deepseek/deepseek-v4-flash");
+    expect(request.headers.get("authorization")).toBeNull();
+    expect(request.headers.get("cf-aig-authorization")).toBe("Bearer gateway-token");
+    expect(request.headers.get("cf-aig-gateway-id")).toBeNull();
+    expect(JSON.parse(request.body).model).toBe("deepseek-v4-flash");
     expect(JSON.parse(request.headers.get("cf-aig-metadata")!)).toEqual({
       user: "user-123",
       source: "chat",
@@ -181,8 +181,8 @@ describe("getModel AI Gateway routing", () => {
     { CF_AI_GATEWAY_API_TOKEN: undefined },
   ])("requires gateway credentials whenever gateway mode is enabled", (overrides) => {
     expect(() => getModel(env(overrides), ANTHROPIC_CONFIG, INITIATOR)).toThrow(
-        "CF_AI_GATEWAY_ACCOUNT_ID and CF_AI_GATEWAY_API_TOKEN (with Workers AI Read and " +
-        "AI Gateway Read) are required when CF_AI_GATEWAY is set.");
+        "CF_AI_GATEWAY_ACCOUNT_ID and CF_AI_GATEWAY_API_TOKEN (with AI Gateway Run and Read, " +
+        "plus Workers AI Read when used) are required when CF_AI_GATEWAY is set.");
   });
 
   it("rejects conflicting Workers AI routing configuration", () => {
