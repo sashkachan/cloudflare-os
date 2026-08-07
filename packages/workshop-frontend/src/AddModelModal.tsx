@@ -19,6 +19,7 @@ type SelectionType =
 const PROVIDER_LABELS: Record<AiModelProvider, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
+  deepseek: 'DeepSeek',
   google: 'Google',
   cloudflare: 'Cloudflare Workers AI',
   ollama: 'Ollama',
@@ -28,6 +29,7 @@ const PROVIDER_LABELS: Record<AiModelProvider, string> = {
 const API_TOKEN_PLACEHOLDERS: Record<AiModelProvider, string> = {
   anthropic: 'sk-ant-...',
   openai: 'sk-...',
+  deepseek: 'sk-...',
   google: 'AIza...',
   cloudflare: 'Cloudflare API token',
   ollama: '(optional)',

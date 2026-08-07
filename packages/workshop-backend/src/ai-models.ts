@@ -10,6 +10,7 @@ import { stream as openaiCompletionsStream } from "@earendil-works/pi-ai/api/ope
 import { stream as openaiResponsesStream } from "@earendil-works/pi-ai/api/openai-responses";
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 import { CLOUDFLARE_WORKERS_AI_MODELS } from "@earendil-works/pi-ai/providers/cloudflare-workers-ai.models";
+import { DEEPSEEK_MODELS } from "@earendil-works/pi-ai/providers/deepseek.models";
 import { GOOGLE_MODELS } from "@earendil-works/pi-ai/providers/google.models";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import { ApprovalQueue, Gatekeeper, ResourceDescription } from '@gadgets/workshop-shared/gatekeeper';
@@ -121,6 +122,9 @@ function catalogModel(provider: AiModelConfig["provider"], modelId: string): Mod
   switch (provider) {
     case "anthropic": return (ANTHROPIC_MODELS as Record<string, Model<Api>>)[modelId];
     case "openai": return (OPENAI_MODELS as Record<string, Model<Api>>)[modelId];
+    case "deepseek": return (DEEPSEEK_MODELS as Record<string, Model<Api>>)[
+      modelId.replace(/^deepseek\//, "")
+    ];
     case "google": return (GOOGLE_MODELS as Record<string, Model<Api>>)[modelId];
     case "cloudflare": return (CLOUDFLARE_WORKERS_AI_MODELS as Record<string, Model<Api>>)[modelId];
     case "ollama": return undefined;
@@ -152,6 +156,42 @@ function workersAiCompat(catalog: Model<Api> | undefined): OpenAICompletionsComp
     ...(catalog?.compat as OpenAICompletionsCompat | undefined),
     sendSessionAffinityHeaders: true,
   };
+}
+
+function deepSeekModel(config: AiModelConfig, baseUrl: string, unified: boolean): Model<Api> {
+  const catalog = catalogModel(config.provider, config.model);
+  const providerModelId = config.model.replace(/^deepseek\//, "");
+  return {
+    id: unified ? `deepseek/${providerModelId}` : providerModelId,
+    name: catalog?.name ?? providerModelId,
+    api: "openai-completions",
+    provider: "deepseek",
+    baseUrl,
+    reasoning: catalog?.reasoning ?? true,
+    input: catalog?.input ?? ["text"],
+    cost: catalog?.cost ?? ZERO_COST,
+    ...modelTokenWindow(config, catalog),
+    thinkingLevelMap: catalog?.thinkingLevelMap,
+    compat: catalog?.compat as OpenAICompletionsCompat | undefined,
+  };
+}
+
+// DeepSeek Unified Billing is exposed through Cloudflare's OpenAI-compatible REST API rather
+// than the provider-native gateway route used by the other supported providers. The canonical
+// `deepseek/<model>` id selects the provider; the gateway header keeps requests, spend limits,
+// and logs on the configured Gateway.
+function getDeepSeekViaCloudflareGateway(
+    config: AiModelConfig, accountId: string, apiToken: string, gateway: string,
+    metadata: GatewayMetadata, sessionAffinity?: string): ModelHandle {
+  return makeHandle({
+    model: deepSeekModel(
+        config, `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`, true),
+    apiKey: apiToken,
+    headers: { "cf-aig-gateway-id": gateway },
+    gatewayMetadata: metadata,
+    sessionAffinity,
+    aiGatewayLogRoute: { gateway, accountId, apiToken },
+  });
 }
 
 // Build the pi model descriptor for reaching a provider's own native API through an AI Gateway
@@ -370,6 +410,12 @@ function getModelViaUserGateway(
   userGateway: UserGatewayRouting,
   sessionAffinity?: string,
 ): ModelHandle {
+  if (config.provider === "deepseek") {
+    return getDeepSeekViaCloudflareGateway(
+        config, userGateway.accountId, userGateway.apiKey, "default", metadata,
+        sessionAffinity);
+  }
+
   // Route through the user's AI Gateway data plane, speaking each provider's native API (see
   // gatewayNativeModel; unified *billing* has no API requirements). Auth is the connected user's
   // Cloudflare token via `cf-aig-authorization` (authorized by its `aig.run` scope); the
@@ -422,6 +468,12 @@ function getModelViaGateway(
       `https://gateway.ai.cloudflare.com/v1/${gwConfig.accountId}`;
   const logRoute = (gateway: string): AiGatewayLogRoute =>
       ({ gateway, accountId: gwConfig.accountId, apiToken: gwConfig.apiToken });
+
+  if (config.provider === "deepseek") {
+    return getDeepSeekViaCloudflareGateway(
+        config, gwConfig.accountId, gwConfig.apiToken, gwConfig.gateway, metadata,
+        options.sessionAffinity);
+  }
 
   if (config.provider === "cloudflare" && !gwConfig.workersAiGateway) {
     // CF_AI_GATEWAY_WAI_DIRECT: the plain Workers AI REST endpoint -- no gateway, no log route,
@@ -539,6 +591,13 @@ function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelH
           ...window,
           thinkingLevelMap: catalog?.thinkingLevelMap,
         },
+        apiKey: config.apiToken,
+        sessionAffinity,
+      });
+    case "deepseek":
+      return makeHandle({
+        model: deepSeekModel(
+            config, config.apiUrl ?? "https://api.deepseek.com", false),
         apiKey: config.apiToken,
         sessionAffinity,
       });

@@ -917,7 +917,8 @@ export type CloudflareAccountOption = {
 };
 
 // Supported AI providers.
-export type AiModelProvider = "openai" | "anthropic" | "google" | "cloudflare" | "ollama";
+export type AiModelProvider =
+    "openai" | "anthropic" | "google" | "deepseek" | "cloudflare" | "ollama";
 
 // Information about the AI gateway configuration. Returned by `AuthenticatedApi.getAiConfig()`.
 export type AiGatewayInfo = {
@@ -979,6 +980,14 @@ export const SUGGESTED_MODELS: Record<
     "gpt-5.6-sol": {name: "GPT 5.6 Sol", contextWindow: 1050000, outputLimit: 128000},
     "gpt-5.6-luna": {name: "GPT 5.6 Luna", contextWindow: 1050000, outputLimit: 128000},
     "gpt-5.6-terra": {name: "GPT 5.6 Terra", contextWindow: 1050000, outputLimit: 128000},
+  },
+  "deepseek": {
+    // Cloudflare's Unified Billing catalog currently exposes this route with a 128 Ki-token
+    // window. Keep the response reservation conservative so long tool transcripts compact before
+    // the provider rejects them.
+    "deepseek/deepseek-v4-flash": {
+      name: "DeepSeek V4 Flash", contextWindow: 131072, outputLimit: 32768,
+    },
   },
   "google": {
     "gemini-3.6-flash": {name: "Gemini 3.6 Flash", contextWindow: 1048576},

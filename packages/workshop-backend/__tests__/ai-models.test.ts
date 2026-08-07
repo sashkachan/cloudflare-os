@@ -32,12 +32,18 @@ const WORKERS_AI_CONFIG: AiModelConfig = {
   apiToken: "ignored-in-gateway-mode",
 };
 
+const DEEPSEEK_CONFIG: AiModelConfig = {
+  provider: "deepseek",
+  model: "deepseek/deepseek-v4-flash",
+  apiToken: "ignored-in-gateway-mode",
+};
+
 function env(overrides: Partial<Cloudflare.Env> = {}): Cloudflare.Env {
   return {
     CF_AI_GATEWAY: "platform-gateway",
     CF_AI_GATEWAY_ACCOUNT_ID: "gateway-account-id",
     CF_AI_GATEWAY_API_TOKEN: "gateway-token",
-    CF_AI_GATEWAY_PROVIDERS: "anthropic,openai,google",
+    CF_AI_GATEWAY_PROVIDERS: "anthropic,openai,google,deepseek",
     ...overrides,
   } as Cloudflare.Env;
 }
@@ -124,6 +130,37 @@ describe("getModel AI Gateway routing", () => {
     });
   });
 
+  it("routes DeepSeek through Cloudflare Unified Billing on the selected gateway", async () => {
+    const handle = getModel(env(), DEEPSEEK_CONFIG, INITIATOR, {
+      metadata: { source: "chat", gadgetId: "gadget-deepseek", chatId: 11 },
+    });
+
+    expect(handle.model.api).toBe("openai-completions");
+    expect(handle.model.id).toBe("deepseek/deepseek-v4-flash");
+    expect(handle.model.baseUrl).toBe(
+        "https://api.cloudflare.com/client/v4/accounts/gateway-account-id/ai/v1");
+    expect(handle.aiGatewayLogRoute).toEqual({
+      gateway: "platform-gateway",
+      accountId: "gateway-account-id",
+      apiToken: "gateway-token",
+    });
+
+    const request = await captureRequest(handle);
+    expect(request.url).toBe(
+        "https://api.cloudflare.com/client/v4/accounts/gateway-account-id/ai/v1/" +
+        "chat/completions");
+    expect(request.headers.get("authorization")).toBe("Bearer gateway-token");
+    expect(request.headers.get("cf-aig-authorization")).toBeNull();
+    expect(request.headers.get("cf-aig-gateway-id")).toBe("platform-gateway");
+    expect(JSON.parse(request.body).model).toBe("deepseek/deepseek-v4-flash");
+    expect(JSON.parse(request.headers.get("cf-aig-metadata")!)).toEqual({
+      user: "user-123",
+      source: "chat",
+      gadgetId: "gadget-deepseek",
+      chatId: 11,
+    });
+  }, 15000);
+
   it("preserves gadget automation metadata", async () => {
     const handle = getModel(env(), ANTHROPIC_CONFIG, GADGET_INITIATOR, {
       metadata: { source: "thread-title", gadgetId: "gadget-456", chatId: 8 },
@@ -144,8 +181,8 @@ describe("getModel AI Gateway routing", () => {
     { CF_AI_GATEWAY_API_TOKEN: undefined },
   ])("requires gateway credentials whenever gateway mode is enabled", (overrides) => {
     expect(() => getModel(env(overrides), ANTHROPIC_CONFIG, INITIATOR)).toThrow(
-        "CF_AI_GATEWAY_ACCOUNT_ID and CF_AI_GATEWAY_API_TOKEN (a Run + Read token) are required " +
-        "when CF_AI_GATEWAY is set.");
+        "CF_AI_GATEWAY_ACCOUNT_ID and CF_AI_GATEWAY_API_TOKEN (with Workers AI Read and " +
+        "AI Gateway Read) are required when CF_AI_GATEWAY is set.");
   });
 
   it("rejects conflicting Workers AI routing configuration", () => {
@@ -301,6 +338,20 @@ describe("getModel direct routing (no gateway)", () => {
     expect(request.url).toBe(
         "https://api.cloudflare.com/client/v4/accounts/user-account-id/ai/v1/chat/completions");
     expect(request.headers.get("authorization")).toBe("Bearer user-token");
+  }, 15000);
+
+  it("uses DeepSeek's native OpenAI-compatible endpoint outside gateway mode", async () => {
+    const handle = getModel(env({ CF_AI_GATEWAY: undefined }), {
+      ...DEEPSEEK_CONFIG,
+      apiToken: "deepseek-token",
+    }, INITIATOR);
+
+    expect(handle.model.id).toBe("deepseek-v4-flash");
+    expect(handle.model.baseUrl).toBe("https://api.deepseek.com");
+    const request = await captureRequest(handle);
+    expect(request.url).toBe("https://api.deepseek.com/chat/completions");
+    expect(request.headers.get("authorization")).toBe("Bearer deepseek-token");
+    expect(JSON.parse(request.body).model).toBe("deepseek-v4-flash");
   }, 15000);
 
   it.each([
