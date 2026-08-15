@@ -38,12 +38,18 @@ const DEEPSEEK_CONFIG: AiModelConfig = {
   apiToken: "ignored-in-gateway-mode",
 };
 
+const OPENROUTER_CONFIG: AiModelConfig = {
+  provider: "openrouter",
+  model: "deepseek/deepseek-v4-flash",
+  apiToken: "ignored-in-gateway-mode",
+};
+
 function env(overrides: Partial<Cloudflare.Env> = {}): Cloudflare.Env {
   return {
     CF_AI_GATEWAY: "platform-gateway",
     CF_AI_GATEWAY_ACCOUNT_ID: "gateway-account-id",
     CF_AI_GATEWAY_API_TOKEN: "gateway-token",
-    CF_AI_GATEWAY_PROVIDERS: "anthropic,openai,google,deepseek",
+    CF_AI_GATEWAY_PROVIDERS: "anthropic,openai,google,deepseek,openrouter",
     ...overrides,
   } as Cloudflare.Env;
 }
@@ -158,6 +164,36 @@ describe("getModel AI Gateway routing", () => {
       source: "chat",
       gadgetId: "gadget-deepseek",
       chatId: 11,
+    });
+  }, 15000);
+
+  it("routes OpenRouter through the selected gateway's stored BYOK key", async () => {
+    const handle = getModel(env(), OPENROUTER_CONFIG, INITIATOR, {
+      metadata: { source: "chat", gadgetId: "gadget-openrouter", chatId: 12 },
+    });
+
+    expect(handle.model.api).toBe("openai-completions");
+    expect(handle.model.id).toBe("deepseek/deepseek-v4-flash");
+    expect(handle.model.baseUrl).toBe(
+        "https://gateway.ai.cloudflare.com/v1/gateway-account-id/platform-gateway/openrouter");
+    expect(handle.aiGatewayLogRoute).toEqual({
+      gateway: "platform-gateway",
+      accountId: "gateway-account-id",
+      apiToken: "gateway-token",
+    });
+
+    const request = await captureRequest(handle);
+    expect(request.url).toBe(
+        "https://gateway.ai.cloudflare.com/v1/gateway-account-id/platform-gateway/openrouter/" +
+        "chat/completions");
+    expect(request.headers.get("authorization")).toBeNull();
+    expect(request.headers.get("cf-aig-authorization")).toBe("Bearer gateway-token");
+    expect(JSON.parse(request.body).model).toBe("deepseek/deepseek-v4-flash");
+    expect(JSON.parse(request.headers.get("cf-aig-metadata")!)).toEqual({
+      user: "user-123",
+      source: "chat",
+      gadgetId: "gadget-openrouter",
+      chatId: 12,
     });
   }, 15000);
 
@@ -352,6 +388,20 @@ describe("getModel direct routing (no gateway)", () => {
     expect(request.url).toBe("https://api.deepseek.com/chat/completions");
     expect(request.headers.get("authorization")).toBe("Bearer deepseek-token");
     expect(JSON.parse(request.body).model).toBe("deepseek-v4-flash");
+  }, 15000);
+
+  it("uses OpenRouter's OpenAI-compatible endpoint outside gateway mode", async () => {
+    const handle = getModel(env({ CF_AI_GATEWAY: undefined }), {
+      ...OPENROUTER_CONFIG,
+      apiToken: "openrouter-token",
+    }, INITIATOR);
+
+    expect(handle.model.id).toBe("deepseek/deepseek-v4-flash");
+    expect(handle.model.baseUrl).toBe("https://openrouter.ai/api/v1");
+    const request = await captureRequest(handle);
+    expect(request.url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(request.headers.get("authorization")).toBe("Bearer openrouter-token");
+    expect(JSON.parse(request.body).model).toBe("deepseek/deepseek-v4-flash");
   }, 15000);
 
   it.each([

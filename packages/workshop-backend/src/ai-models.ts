@@ -13,7 +13,7 @@ import { CLOUDFLARE_WORKERS_AI_MODELS } from "@earendil-works/pi-ai/providers/cl
 import { DEEPSEEK_MODELS } from "@earendil-works/pi-ai/providers/deepseek.models";
 import { GOOGLE_MODELS } from "@earendil-works/pi-ai/providers/google.models";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
-import { ApprovalQueue, Gatekeeper, ResourceDescription } from '@gadgets/workshop-shared/gatekeeper';
+import { ApprovalQueue, Gatekeeper, ResourceDescription, stripTrailingSlashes } from '@gadgets/workshop-shared/gatekeeper';
 import { LanguageModelBinding } from "./ai-model-binding";
 import AI_MODEL_BINDING_TYPES from "./ai-model-binding.txt";
 import { AiChatAuthorInfo, AiModelConfig, SUGGESTED_MODELS, WORKERS_AI_OUTPUT_LIMIT }
@@ -22,9 +22,11 @@ import { AiGatewayConfig, getAiGatewayConfig, type AiGatewayLogRoute } from "./a
 import { completeText } from "./ai-invoke.js";
 import { bridgePdfAttachments } from "./chat-attachment-pdf.js";
 
- // Routing to bill a user's own Cloudflare account for inference (BYOK path once the free tier is
- // exhausted). Defined here to avoid a backend->ai-gateway-billing type import cycle at runtime.
- // Inference is routed through the account's "default" AI Gateway.
+ /**
+  * Routing to bill a user's own Cloudflare account for inference (BYOK path once the free tier is
+  * exhausted). Defined here to avoid a backend->ai-gateway-billing type import cycle at runtime.
+  * Inference is routed through the account's "default" AI Gateway.
+  */
  export interface UserGatewayRouting {
    accountId: string;
    apiKey: string;
@@ -59,10 +61,12 @@ type ModelRoutingOptions = {
  * handle-level knobs.
  */
 export type ModelStreamOptions = SimpleStreamOptions & {
-  // When false, suppress the handle's per-API thinking/reasoning defaults so the request runs
-  // without extended thinking (as far as the model allows). Used by completeText(): one-shot
-  // calls -- titles, binding names, compaction summaries, gadget model bindings -- should be
-  // quick, and none of them benefit from cross-step reasoning. Default: true.
+  /**
+   * When false, suppress the handle's per-API thinking/reasoning defaults so the request runs
+   * without extended thinking (as far as the model allows). Used by completeText(): one-shot
+   * calls -- titles, binding names, compaction summaries, gadget model bindings -- should be
+   * quick, and none of them benefit from cross-step reasoning. Default: true.
+   */
   thinking?: boolean;
 };
 
@@ -73,24 +77,30 @@ export type ModelStreamOptions = SimpleStreamOptions & {
  * failures; failures surface as a final AssistantMessage with stopReason "error"/"aborted".
  */
 export type ModelHandle = {
-  // pi model descriptor (plain data; pi dispatches purely on `model.api`).
+  /** pi model descriptor (plain data; pi dispatches purely on `model.api`). */
   model: Model<Api>;
 
-  // Streams a response. Merges the handle's routing/auth and per-API options into whatever
-  // per-call options the caller (e.g. the agent loop) passes. Assignable to pi-agent-core's
-  // StreamFn (the extra ModelStreamOptions knobs are optional).
+  /**
+   * Streams a response. Merges the handle's routing/auth and per-API options into whatever
+   * per-call options the caller (e.g. the agent loop) passes. Assignable to pi-agent-core's
+   * StreamFn (the extra ModelStreamOptions knobs are optional).
+   */
   stream: (model: Model<Api>, context: Context, options?: ModelStreamOptions)
       => AssistantMessageEventStream;
 
-  // Route for retrieving this model's AI Gateway logs for cost accounting. Absent when requests
-  // don't flow through an AI Gateway (direct provider access, direct Workers AI REST).
+  /**
+   * Route for retrieving this model's AI Gateway logs for cost accounting. Absent when requests
+   * don't flow through an AI Gateway (direct provider access, direct Workers AI REST).
+   */
   aiGatewayLogRoute?: AiGatewayLogRoute;
 
-  // Status and AI Gateway log id of the most recent HTTP response observed by `stream`. Reset at
-  // the start of every request and set from pi's onResponse callback (which fires only once a
-  // response arrives -- an SDK-level failure leaves this undefined), so consumers must read it
-  // right after the request they care about completes. Turns run requests sequentially, so this
-  // is safe.
+  /**
+   * Status and AI Gateway log id of the most recent HTTP response observed by `stream`. Reset at
+   * the start of every request and set from pi's onResponse callback (which fires only once a
+   * response arrives -- an SDK-level failure leaves this undefined), so consumers must read it
+   * right after the request they care about completes. Turns run requests sequentially, so this
+   * is safe.
+   */
   lastResponse?: { status: number; aiGatewayLogId?: string };
 };
 
@@ -125,6 +135,7 @@ function catalogModel(provider: AiModelConfig["provider"], modelId: string): Mod
     case "deepseek": return (DEEPSEEK_MODELS as Record<string, Model<Api>>)[
       modelId.replace(/^deepseek\//, "")
     ];
+    case "openrouter": return undefined;
     case "google": return (GOOGLE_MODELS as Record<string, Model<Api>>)[modelId];
     case "cloudflare": return (CLOUDFLARE_WORKERS_AI_MODELS as Record<string, Model<Api>>)[modelId];
     case "ollama": return undefined;
@@ -173,6 +184,24 @@ function deepSeekModel(config: AiModelConfig, baseUrl: string): Model<Api> {
     ...modelTokenWindow(config, catalog),
     thinkingLevelMap: catalog?.thinkingLevelMap,
     compat: catalog?.compat as OpenAICompletionsCompat | undefined,
+  };
+}
+
+// OpenRouter exposes an OpenAI-compatible chat-completions API. Model identifiers retain their
+// provider prefix (for example, deepseek/deepseek-v4-flash) because OpenRouter uses it to select
+// the upstream model.
+function openRouterModel(config: AiModelConfig, baseUrl: string): Model<Api> {
+  const window = modelTokenWindow(config, undefined);
+  return {
+    id: config.model,
+    name: SUGGESTED_MODELS.openrouter[config.model]?.name ?? config.model,
+    api: "openai-completions",
+    provider: "openrouter",
+    baseUrl,
+    reasoning: true,
+    input: ["text", "image"],
+    cost: ZERO_COST,
+    ...window,
   };
 }
 
@@ -226,6 +255,10 @@ function gatewayNativeModel(config: AiModelConfig, gatewayUrl: string): Model<Ap
       // Gateway to inject the stored DeepSeek `default` BYOK key; the account-level /ai/v1
       // endpoint falls through to Unified Billing for this catalog route.
       return deepSeekModel(config, `${gatewayUrl}/deepseek`);
+    case "openrouter":
+      // Cloudflare's provider-native OpenRouter route accepts the OpenAI chat-completions API.
+      // The Gateway injects the stored OpenRouter `default` key after authenticating the request.
+      return openRouterModel(config, `${gatewayUrl}/openrouter`);
     case "google":
       // pi's own gateway catalog skips Google, but the gateway's google-ai-studio passthrough +
       // pi's google API impl work; we construct the model ourselves. The @google/genai SDK
@@ -575,6 +608,12 @@ function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelH
         apiKey: config.apiToken,
         sessionAffinity,
       });
+    case "openrouter":
+      return makeHandle({
+        model: openRouterModel(config, config.apiUrl ?? "https://openrouter.ai/api/v1"),
+        apiKey: config.apiToken,
+        sessionAffinity,
+      });
     case "ollama":
       // `apiUrl` is the Ollama server base; its OpenAI-compat endpoint lives under /v1. Accept
       // (and strip) a trailing `/api` or `/v1` path: configs saved before the pi migration store
@@ -590,11 +629,34 @@ function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelH
           name: config.model,
           api: "openai-completions",
           provider: "ollama",
-          baseUrl: `${(config.apiUrl ?? "http://localhost:11434")
-              .replace(/\/+$/, "").replace(/\/(api|v1)$/, "")}/v1`,
+          baseUrl: `${stripTrailingSlashes(config.apiUrl ?? "http://localhost:11434")
+              .replace(/\/(api|v1)$/, "")}/v1`,
           reasoning: true,
           input: ["text", "image"],
           cost: ZERO_COST,
+
+          // Pi's OpenAI compat uses the "developer" role for the system prompt by default,
+          // disabling it only for certain hostnames which are known not to support it.
+          //
+          // In ollama, some models support it and some do not. Frustratingly, the ones that do not
+          // don't necessarily throw an error. They may just proceed without a system prompt. For
+          // example, when I tested Muse Glimmer the day after it was released, I found it
+          // understood what tool calls were available to it but didn't know any of the info in
+          // the system prompt. Annoyingly, Muse Glimmer seems to be trained to treat the system
+          // prompt as secret, so refused to answer my questions about it directly. But I figured
+          // out it clearly wasn't getting the system prompt. And when I disabled  the "developer"
+          // role, the problem was fixed. In contrast, though, Gemma 4 running under otherwise
+          // exactly the same setup does understand the "developer" role and works fine. Weird!
+          //
+          // Some users also filed issues about this because they were trying to use the ollama
+          // provider as a way to target an arbitrary third-party OpenAI-compatible provider. This
+          // is not the intended use case for the ollama provider -- we should add an explicit
+          // provider for this. The ollama provider could in the future switch to using the ollama
+          // native API rather than the OpenAI-compatible endpoint, which would break users using
+          // it in this way. That said, if this flag works as a temporary work-around for them
+          // util we add a real OpenAI provider option... great.
+          compat: catalog?.compat ?? {supportsDeveloperRole: false},
+
           ...window,
         },
         ...(config.apiToken === ""

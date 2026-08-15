@@ -36,6 +36,7 @@ const ATTACHMENT_SUPPORT_BY_PROVIDER = {
   anthropic: isTextImageOrPdfMime,
   openai: isTextImageOrPdfMime,
   deepseek: isTextLikeAttachmentMimeType,
+  openrouter: isTextOrImageMime,
   google: isTextImageOrPdfMime,
   cloudflare: isTextOrImageMime,
   ollama: isTextOrImageMime,
