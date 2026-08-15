@@ -176,6 +176,7 @@ describe("getModel AI Gateway routing", () => {
     expect(handle.model.id).toBe("deepseek/deepseek-v4-flash");
     expect(handle.model.baseUrl).toBe(
         "https://gateway.ai.cloudflare.com/v1/gateway-account-id/platform-gateway/openrouter");
+    expect(handle.model.thinkingLevelMap).toEqual({ off: null });
     expect(handle.aiGatewayLogRoute).toEqual({
       gateway: "platform-gateway",
       accountId: "gateway-account-id",
@@ -188,7 +189,9 @@ describe("getModel AI Gateway routing", () => {
         "chat/completions");
     expect(request.headers.get("authorization")).toBeNull();
     expect(request.headers.get("cf-aig-authorization")).toBe("Bearer gateway-token");
-    expect(JSON.parse(request.body).model).toBe("deepseek/deepseek-v4-flash");
+    const body = JSON.parse(request.body);
+    expect(body.model).toBe("deepseek/deepseek-v4-flash");
+    expect(body.reasoning).toBeUndefined();
     expect(JSON.parse(request.headers.get("cf-aig-metadata")!)).toEqual({
       user: "user-123",
       source: "chat",

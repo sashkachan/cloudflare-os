@@ -202,6 +202,10 @@ function openRouterModel(config: AiModelConfig, baseUrl: string): Model<Api> {
     input: ["text", "image"],
     cost: ZERO_COST,
     ...window,
+    // OpenRouter publishes per-model reasoning defaults. Omitting the field lets mandatory
+    // models (for example, Gemini thinking models) select their required default; explicitly
+    // sending `reasoning: {effort: "none"}` makes those endpoints reject the request.
+    thinkingLevelMap: { off: null },
   };
 }
 
