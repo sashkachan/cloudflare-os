@@ -494,14 +494,6 @@ for (const gk of gatekeepers) {
     if (process.env[name] !== undefined) config.vars[name] = process.env[name];
   }
 
-  // Dev mode: strip global_fetch_strictly_public so outbound fetches to private-network
-  // targets (e.g. NetBird peers) are not blocked. Production deployments keep this flag.
-  if (Array.isArray(config.compatibility_flags)) {
-    config.compatibility_flags = config.compatibility_flags.filter(
-      f => f !== "global_fetch_strictly_public"
-    );
-  }
-
   for (const gk of gatekeepers) {
     const binding = {
       binding: bindingName(gk),
