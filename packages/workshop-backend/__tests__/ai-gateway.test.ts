@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  AiGatewayConfig,
   AiGatewayLogRetryableError,
   getAiGatewayLogCost,
 } from "../src/ai-gateway.js";
@@ -112,5 +113,34 @@ describe("getAiGatewayLogCost", () => {
         .rejects.toBeInstanceOf(AiGatewayLogRetryableError);
     await expect(getAiGatewayLogCost(env(), route, "log-id"))
         .rejects.toBeInstanceOf(AiGatewayLogRetryableError);
+  });
+});
+
+describe("AiGatewayConfig.getModelList", () => {
+  function config(providers: string): AiGatewayConfig {
+    return new AiGatewayConfig(env({
+      CF_AI_GATEWAY_PROVIDERS: providers,
+      CF_AI_GATEWAY_ACCOUNT_ID: "account-id",
+      CF_AI_GATEWAY_API_TOKEN: "token",
+    }));
+  }
+
+  it("appends the canonical provider suffix to every suggested model", () => {
+    const names = new Map(config("cloudflare,openai,openrouter").getModelList()
+        .map((model) => [model.name, model.id]));
+
+    // OpenRouter-served models keep their distinguishing suffix, legacy suffixes are replaced,
+    // and everything else is marked Cloudflare-hosted.
+    expect(names.has("GLM 5.2 (Cloudflare Hosted)")).toBe(true);
+    expect(names.has("GPT 5.6 Sol (Cloudflare Hosted)")).toBe(true);
+    expect(names.has("DeepSeek V4 Flash (OpenRouter)")).toBe(true);
+    expect([...names.keys()].some((name) => name.includes("(Workers AI)"))).toBe(false);
+  });
+
+  it("resolves suggested models with the same normalized display name", () => {
+    const resolved = config("cloudflare,openrouter").resolveModel("@cf/zai-org/glm-5.2");
+
+    expect(resolved!.profile.name).toBe("GLM 5.2 (Cloudflare Hosted)");
+    expect(resolved!.config.provider).toBe("cloudflare");
   });
 });

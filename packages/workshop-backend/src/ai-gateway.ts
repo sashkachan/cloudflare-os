@@ -1,4 +1,9 @@
-import { AiChatAuthorInfo, AiModelConfig, SUGGESTED_MODELS } from "@gadgets/workshop-shared/api";
+import {
+  AiChatAuthorInfo,
+  AiModelConfig,
+  SUGGESTED_MODELS,
+  modelDisplayName,
+} from "@gadgets/workshop-shared/api";
 import { UserAiModelRecord } from "./user.js";
 
 // The model used for quick tasks like title generation when AI Gateway mode is active.
@@ -46,7 +51,11 @@ export class AiGatewayConfig {
     for (let [provider, models] of Object.entries(SUGGESTED_MODELS)) {
       if (this.providers.has(provider)) {
         for (let [id, model] of Object.entries(models)) {
-          result.push({ type: "agent", id, name: model.name });
+          result.push({
+            type: "agent",
+            id,
+            name: modelDisplayName(model.name, provider as AiModelConfig["provider"]),
+          });
         }
       }
     }
@@ -61,7 +70,11 @@ export class AiGatewayConfig {
     for (let [provider, models] of Object.entries(SUGGESTED_MODELS)) {
       if (this.providers.has(provider) && modelId in models) {
         return {
-          profile: { type: "agent", id: modelId, name: models[modelId].name },
+          profile: {
+            type: "agent",
+            id: modelId,
+            name: modelDisplayName(models[modelId].name, provider as AiModelConfig["provider"]),
+          },
           config: {
             provider: provider as AiModelConfig["provider"],
             model: modelId,

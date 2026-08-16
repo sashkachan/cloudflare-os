@@ -1219,6 +1219,30 @@ export const SUGGESTED_MODELS: Record<
 };
 
 /**
+ * Canonical provider suffix shown on every model in the picker, so entries that exist on both
+ * hosting paths (for example DeepSeek V4 Flash via OpenRouter and via Cloudflare) are always
+ * distinguishable: OpenRouter-served models say where they route, and everything else is hosted
+ * through Cloudflare (Workers AI and the AI Gateway provider routes).
+ */
+export function modelDisplaySuffix(provider: AiModelProvider): string {
+  return provider === "openrouter" ? "(OpenRouter)" : "(Cloudflare Hosted)";
+}
+
+// Hand-typed or pre-normalization suffixes that must not survive into a normalized name.
+const LEGACY_MODEL_SUFFIX =
+    /(?:\s*\((?:OpenRouter|Workers AI|Cloudflare Hosted)\)|\s+Cloudflare Hosted)\s*$/;
+
+/**
+ * Normalize a model display name to carry exactly one canonical provider suffix. The stored
+ * name is stripped of any legacy suffix first (suggested names like "GLM 5.2 (Workers AI)" and
+ * names typed by hand before the suffix became systematic, like "DeepSeek V4 Flash Cloudflare
+ * Hosted"), so re-applying never duplicates the suffix.
+ */
+export function modelDisplayName(name: string, provider: AiModelProvider): string {
+  return `${name.replace(LEGACY_MODEL_SUFFIX, "").trimEnd()} ${modelDisplaySuffix(provider)}`;
+}
+
+/**
  * Metadata about a workspace (one Overseer DO and everything in it). Includes everything needed
  * to render the workspace list on the front page.
  *
