@@ -456,15 +456,6 @@ for (const gk of gatekeepers) {
     }
   }
 
-  // Self-hosted runtime with MCP_ALLOW_INSECURE=true (see the Komodo stack): drop the
-  // workerd-level global_fetch_strictly_public flag so private NetBird peers are reachable
-  // from gatekeeper Workers. Production deployments keep the flag as the SSRF boundary.
-  if (process.env.MCP_ALLOW_INSECURE === "true" && Array.isArray(config.compatibility_flags)) {
-    config.compatibility_flags = config.compatibility_flags.filter(
-      f => f !== "global_fetch_strictly_public"
-    );
-  }
-
   const outPath = join(gk.dir, "wrangler.dev.jsonc");
   writeFileSync(outPath, JSON.stringify(config, null, 2) + "\n");
   console.log(`generated: ${outPath}`);
@@ -501,15 +492,6 @@ for (const gk of gatekeepers) {
   // they are injected into the gatekeeper Workers (see SHARED_GATEKEEPER_CREDS below).
   for (const name of OPTIONAL_FEATURE_VARS) {
     if (process.env[name] !== undefined) config.vars[name] = process.env[name];
-  }
-
-  // Self-hosted runtime with MCP_ALLOW_INSECURE=true: same workerd-level relaxation as the
-  // gatekeepers, so the webFetch agent tool can reach private NetBird peers. See the comment
-  // in the gatekeeper generation loop above.
-  if (process.env.MCP_ALLOW_INSECURE === "true" && Array.isArray(config.compatibility_flags)) {
-    config.compatibility_flags = config.compatibility_flags.filter(
-      f => f !== "global_fetch_strictly_public"
-    );
   }
 
   for (const gk of gatekeepers) {
