@@ -1219,18 +1219,34 @@ export const SUGGESTED_MODELS: Record<
 };
 
 /**
- * Canonical provider suffix shown on every model in the picker, so entries that exist on both
- * hosting paths (for example DeepSeek V4 Flash via OpenRouter and via Cloudflare) are always
- * distinguishable: OpenRouter-served models say where they route, and everything else is hosted
- * through Cloudflare (Workers AI and the AI Gateway provider routes).
+ * Canonical provider suffix shown on every model in the picker, mirroring the provider labels
+ * in the Add Model dialog so entries that exist on multiple serving paths (for example DeepSeek
+ * V4 Flash via OpenRouter and via Cloudflare) stay distinguishable. The deepseek provider route
+ * in this deployment runs on Cloudflare Unified Billing (no DeepSeek key), so its models keep
+ * the "(Cloudflare Hosted)" label coined for them before this suffix became systematic.
  */
+const MODEL_PROVIDER_SUFFIXES: Record<AiModelProvider, string> = {
+  openai: "(OpenAI)",
+  anthropic: "(Anthropic)",
+  google: "(Google)",
+  cloudflare: "(Workers AI)",
+  openrouter: "(OpenRouter)",
+  deepseek: "(Cloudflare Hosted)",
+  ollama: "(Ollama)",
+};
+
 export function modelDisplaySuffix(provider: AiModelProvider): string {
-  return provider === "openrouter" ? "(OpenRouter)" : "(Cloudflare Hosted)";
+  return MODEL_PROVIDER_SUFFIXES[provider];
 }
 
-// Hand-typed or pre-normalization suffixes that must not survive into a normalized name.
-const LEGACY_MODEL_SUFFIX =
-    /(?:\s*\((?:OpenRouter|Workers AI|Cloudflare Hosted)\)|\s+Cloudflare Hosted)\s*$/;
+// Any canonical suffix (parenthesized form) or the pre-normalization hand-typed bare form,
+// which must not survive into a normalized name.
+const LEGACY_MODEL_SUFFIX = new RegExp(
+    `(?:\\s*\\((?:${[...new Set([
+      ...Object.values(MODEL_PROVIDER_SUFFIXES),
+      "Workers AI",
+      "Cloudflare Hosted",
+    ])].join("|")})\\)|\\s+Cloudflare Hosted)\\s*$`);
 
 /**
  * Normalize a model display name to carry exactly one canonical provider suffix. The stored
