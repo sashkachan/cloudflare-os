@@ -96,10 +96,10 @@ describe("compaction trigger", () => {
   });
 
   it("reserves output capacity only where the model counts it against its own window", () => {
-    // The deepseek route declares an output cap, so it must be withheld from the prompt budget.
+    // Workers AI charges the response to the window, so it has to be withheld.
     expect(getModelTokenLimits({
-      provider: "deepseek", model: "deepseek/deepseek-v4-flash", apiToken: "",
-    })).toEqual({inputBudget: 98_304, maxOutputTokens: 32_768});
+      provider: "cloudflare", model: "@cf/zai-org/glm-5.2", apiToken: "",
+    })).toEqual({inputBudget: 229_376, maxOutputTokens: 32_768});
 
     // Anthropic publishes an input-only window, so withholding anything would waste it.
     expect(getModelTokenLimits({

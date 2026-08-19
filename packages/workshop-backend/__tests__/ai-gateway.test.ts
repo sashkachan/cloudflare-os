@@ -234,20 +234,21 @@ describe("AiGatewayConfig.getModelList", () => {
   }
 
   it("appends the canonical provider suffix to every suggested model", () => {
-    const names = new Map(config("deepseek,openrouter").getModelList()
+    const names = new Map(config("cloudflare,openai,openrouter").getModelList()
         .map((model) => [model.name, model.id]));
 
     // Each provider gets its vendor label, mirroring the Add Model dialog.
-    expect(names.has("DeepSeek V4 Flash (Cloudflare Hosted)")).toBe(true);
+    expect(names.has("GLM 5.2 (Workers AI)")).toBe(true);
+    expect(names.has("GPT 5.6 Sol (OpenAI)")).toBe(true);
     expect(names.has("DeepSeek V4 Flash (OpenRouter)")).toBe(true);
-    expect([...names.keys()].some((name) => name.includes("(Workers AI)"))).toBe(false);
-    expect([...names.keys()].some((name) => name.includes("(OpenAI)"))).toBe(false);
+    expect([...names.keys()].some((name) => name.includes("(Cloudflare Hosted)")))
+        .toBe(false);
   });
 
   it("resolves suggested models with the same normalized display name", () => {
-    const resolved = config("deepseek,openrouter").resolveModel("deepseek/deepseek-v4-flash");
+    const resolved = config("cloudflare,openrouter").resolveModel("@cf/zai-org/glm-5.2");
 
-    expect(resolved!.profile.name).toBe("DeepSeek V4 Flash (Cloudflare Hosted)");
-    expect(resolved!.config.provider).toBe("deepseek");
+    expect(resolved!.profile.name).toBe("GLM 5.2 (Workers AI)");
+    expect(resolved!.config.provider).toBe("cloudflare");
   });
 });
